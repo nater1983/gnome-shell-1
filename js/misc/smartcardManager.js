@@ -5,6 +5,9 @@ import * as Signals from './signals.js';
 
 import * as ObjectManager from './objectManager.js';
 
+const SMARTCARD_SETTINGS_SCHEMA = 'org.gnome.settings-daemon.peripherals.smartcard';
+const SMARTCARD_REMOVAL_ACTION = 'removal-action';
+
 const SmartcardTokenIface = `
 <node>
 <interface name="org.gnome.SettingsDaemon.Smartcard.Token">
@@ -38,6 +41,7 @@ class SmartcardManager extends Signals.EventEmitter {
             knownInterfaces: [SmartcardTokenIface],
             onLoaded: this._onLoaded.bind(this),
         });
+        this._settings = new Gio.Settings({schema_id: SMARTCARD_SETTINGS_SCHEMA});
         this._insertedTokens = {};
         this._loginToken = null;
     }
@@ -117,5 +121,16 @@ class SmartcardManager extends Signals.EventEmitter {
             return false;
 
         return true;
+    },
+
+    loggedInWithToken() {
+        if (this._loginToken)
+            return true;
+
+        return false;
+    }
+
+    lockOnRemoval() {
+        return this._settings.get_string(SMARTCARD_REMOVAL_ACTION) === 'lock-screen';
     }
 }
