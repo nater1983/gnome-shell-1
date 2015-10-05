@@ -21,6 +21,7 @@ const DEFAULT_BUTTON_WELL_ANIMATION_DELAY = 1000;
 const DEFAULT_BUTTON_WELL_ANIMATION_TIME = 300;
 
 const MESSAGE_FADE_OUT_ANIMATION_TIME = 500;
+const PREEMPTIVE_ANSWER_TIMEOUT = 500;
 
 /** @enum {number} */
 export const AuthPromptMode = {
@@ -69,6 +70,8 @@ export const AuthPrompt = GObject.registerClass({
         this._mode = mode;
         this._defaultButtonWellActor = null;
         this._cancelledRetries = 0;
+
+        this._idleMonitor = global.backend.get_core_idle_monitor();
 
         let reauthenticationOnly;
         if (this._mode === AuthPromptMode.UNLOCK_ONLY)
@@ -127,8 +130,14 @@ export const AuthPrompt = GObject.registerClass({
     }
 
     _onDestroy() {
+        if (this._preemptiveAnswerWatchId) {
+            this._idleMonitor.remove_watch(this._preemptiveAnswerWatchId);
+            this._preemptiveAnswerWatchId = 0;
+        }
+
         this._inactiveEntry.destroy();
         this._inactiveEntry = null;
+
         this._userVerifier.destroy();
         this._userVerifier = null;
     }
@@ -280,6 +289,11 @@ export const AuthPrompt = GObject.registerClass({
             this._userVerifier.answerQuery(this._queryingService, this._entry.text);
         else
             this._preemptiveAnswer = this._entry.text;
+
+        if (this._preemptiveAnswerWatchId) {
+            this._idleMonitor.remove_watch(this._preemptiveAnswerWatchId);
+            this._preemptiveAnswerWatchId = 0;
+        }
 
         this.emit('next');
     }
@@ -490,6 +504,11 @@ export const AuthPrompt = GObject.registerClass({
     }
 
     setQuestion(question) {
+        if (this._preemptiveAnswerWatchId) {
+            this._idleMonitor.remove_watch(this._preemptiveAnswerWatchId);
+            this._preemptiveAnswerWatchId = 0;
+        }
+
         this._entry.hint_text = question;
 
         this._authList.hide();
@@ -611,12 +630,30 @@ export const AuthPrompt = GObject.registerClass({
             this._updateEntry(false);
     }
 
+    _onUserStoppedTypePreemptiveAnswer() {
+        if (!this._preemptiveAnswerWatchId ||
+            this._preemptiveAnswer ||
+            this._queryingService)
+            return;
+
+        this._idleMonitor.remove_watch(this._preemptiveAnswerWatchId);
+        this._preemptiveAnswerWatchId = 0;
+
+        this._entry.text = '';
+        this.updateSensitivity(false);
+    }
+
     reset() {
         let oldStatus = this.verificationStatus;
         this.verificationStatus = AuthPromptStatus.NOT_VERIFYING;
         this.cancelButton.reactive = this._hasCancelButton;
         this.cancelButton.can_focus = this._hasCancelButton;
         this._preemptiveAnswer = null;
+
+        if (this._preemptiveAnswerWatchId)
+            this._idleMonitor.remove_watch(this._preemptiveAnswerWatchId);
+        this._preemptiveAnswerWatchId = this._idleMonitor.add_idle_watch(PREEMPTIVE_ANSWER_TIMEOUT,
+            this._onUserStoppedTypePreemptiveAnswer.bind(this));
 
         if (this._userVerifier)
             this._userVerifier.cancel();
