@@ -78,7 +78,7 @@ class SmartcardManager extends Signals.EventEmitter {
     _addToken(token) {
         this._updateToken(token);
 
-        token.connect('g-properties-changed', (proxy, properties) => {
+        token._smartcardSignalId = token.connect('g-properties-changed', (proxy, properties) => {
             const isInsertedChanged = !!properties.lookup_value('IsInserted', null);
             if (isInsertedChanged) {
                 this._updateToken(token);
@@ -103,10 +103,13 @@ class SmartcardManager extends Signals.EventEmitter {
             this.emit('smartcard-removed', token);
         }
 
+        if (token._smartcardSignalId) {
+            token.disconnect(token._smartcardSignalId);
+            delete token._smartcardSignalId;
+        }
+
         if (this._loginToken === token)
             this._loginToken = null;
-
-        token.disconnectAll();
     }
 
     hasInsertedTokens() {
