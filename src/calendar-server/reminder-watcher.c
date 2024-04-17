@@ -234,6 +234,7 @@ reminder_watcher_notify_display (ReminderWatcher *rw,
     }
 #endif
 
+  g_notification_add_button_with_target (notification, _("Snooze"), "app.snooze-reminder", "s", notif_id);
   g_notification_add_button_with_target (notification, _("Dismiss"), "app.dismiss-reminder", "s", notif_id);
 
   g_application_send_notification (rw->priv->application, notif_id, notification);
@@ -761,6 +762,48 @@ reminder_watcher_dismiss_by_id (EReminderWatcher *reminder_watcher,
 
   if (!link)
     print_debug ("Dismiss: Cannot find reminder '%s'", id);
+
+  g_slist_free_full (past, e_reminder_data_free);
+}
+
+void
+reminder_watcher_snooze_by_id (EReminderWatcher *reminder_watcher,
+                               const gchar *id)
+{
+  ReminderWatcher *rw;
+  GSList *past, *link;
+
+  g_return_if_fail (IS_REMINDER_WATCHER (reminder_watcher));
+  g_return_if_fail (id && *id);
+
+  rw = REMINDER_WATCHER (reminder_watcher);
+  past = e_reminder_watcher_dup_past (reminder_watcher);
+
+  for (link = past; link; link = g_slist_next (link))
+    {
+      EReminderData *rd = link->data;
+      gchar *rd_id;
+
+      rd_id = reminder_watcher_build_notif_id (rd);
+
+      if (g_strcmp0 (rd_id, id) == 0)
+        {
+          print_debug ("Snooze: Going to snooze '%s'", reminder_watcher_get_rd_summary (rd));
+
+          g_application_withdraw_notification (rw->priv->application, id);
+
+          /* snooze for 9 minutes */
+          e_reminder_watcher_snooze (reminder_watcher, rd, (g_get_real_time () / G_USEC_PER_SEC) + (60 * 9));
+
+          g_free (rd_id);
+          break;
+        }
+
+      g_free (rd_id);
+    }
+
+  if (!link)
+    print_debug ("Snooze: Cannot find reminder '%s'", id);
 
   g_slist_free_full (past, e_reminder_data_free);
 }
